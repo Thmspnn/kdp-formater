@@ -140,7 +140,8 @@
   }
   .thumb:hover { box-shadow: 0 3px 12px rgba(245, 165, 36, .45); border-color: var(--accent); }
   .info { min-width: 0; }
-  .info .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .info .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    background: none; border: none; padding: 0; color: inherit; font-family: inherit; text-align: left; width: 100%; }
   .info .name:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
   .info .sub { font-size: 12.5px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
   .info .sub .tag { padding: 0 7px; border-radius: 6px; background: rgba(96, 165, 250, .1); color: var(--info); }
@@ -563,9 +564,9 @@
       <li class="chapter" data-id="${f.id}" tabindex="0" aria-label="Chapter ${i + 1}: ${escapeHtml(f.name)}">
         <button class="handle" type="button" aria-label="Drag to reorder" tabindex="-1">${ICONS.grip}</button>
         <div class="num" data-action="read" title="Click to read PDF">${i + 1}</div>
-        <img class="thumb" src="/files/${f.id}/thumbnail" alt="Page 1 thumbnail" loading="lazy" data-action="read" title="Click to read PDF">
+        <img class="thumb" src="/files/${f.id}/thumbnail" alt="Page 1 thumbnail" loading="lazy" draggable="false" data-action="read" title="Click to read PDF">
         <div class="info">
-          <div class="name" title="Click to read PDF" data-action="read">${escapeHtml(f.name)}</div>
+          <button type="button" class="name" data-action="read" title="Click to read PDF">${escapeHtml(f.name)}</button>
           <div class="sub"><span>${f.pages} page${f.pages === 1 ? "" : "s"}</span><span>${fmtBytes(f.size)}</span>
             <span class="tag">${f.width_in}" × ${f.height_in}"</span></div>
         </div>
@@ -576,6 +577,13 @@
           <button class="icon-btn danger" type="button" data-action="delete" aria-label="Remove chapter">${ICONS.del}</button>
         </div>
       </li>`).join("");
+    // Direct listeners on filename buttons — works even when pointer capture suppresses bubbling
+    els.list.querySelectorAll('.info .name').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openReader(btn.closest('.chapter').dataset.id);
+      });
+    });
     els.empty.style.display = files.length ? "none" : "block";
     const pages = files.reduce((s, f) => s + f.pages, 0);
     els.meta.innerHTML = `<b>${files.length}</b> chapter${files.length === 1 ? "" : "s"} &middot; <b>${pages}</b> source page${pages === 1 ? "" : "s"}`;
@@ -686,16 +694,20 @@
     const li = e.target.closest(".chapter");
     // Don't capture drag on interactive elements inside .info (e.g. the clickable filename)
     if (!handle || !li || busy || e.button !== 0 || files.length < 2) return;
-    if (e.target.closest("[data-action]")) return;
-    e.preventDefault();
+    // Clickable links (filename, number, thumbnail, buttons) only start a drag from the grip handle
+    if (e.target.closest("[data-action], button") && !e.target.closest(".handle")) return;
+    if (e.target.closest(".handle")) e.preventDefault();
+    // Pointer is captured only once the mouse really moves, so a plain click always reaches its link
     drag = { li, pointerId: e.pointerId, startY: e.clientY, startTop: li.offsetTop, before: files.slice(), moved: false };
-    li.setPointerCapture(e.pointerId);
   });
   els.list.addEventListener("pointermove", (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const dy = e.clientY - drag.startY;
     if (!drag.moved && Math.abs(dy) < 4) return;
-    if (!drag.moved) { drag.moved = true; drag.li.classList.add("dragging"); document.body.style.cursor = "grabbing"; }
+    if (!drag.moved) {
+      drag.moved = true; drag.li.classList.add("dragging"); document.body.style.cursor = "grabbing";
+      try { drag.li.setPointerCapture(e.pointerId); } catch (_) {}
+    }
 
     // Layout positions (offsetTop) ignore transforms, so animations never confuse hit-testing.
     const li = drag.li;

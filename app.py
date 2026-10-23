@@ -72,7 +72,7 @@ app.config.update(
     TEMPLATES_AUTO_RELOAD=True,  # always serve the latest index.html without a restart
 )
 app.jinja_env.auto_reload = True
-APP_VERSION = "1.4 (clickable chapter number / thumbnail / name)"
+APP_VERSION = "1.5 (filename link fix)"
 
 _locks: Dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
