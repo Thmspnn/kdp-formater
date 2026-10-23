@@ -7,6 +7,7 @@ All the work happens on your own computer with the open-source PyMuPDF library. 
 kdp_formatter/
 ├── app.py              # Flask backend: upload, reorder, delete, generate, download
 ├── kdp_processor.py    # PDF engine: trimming, re-fitting, margins, merge, metadata, preflight
+├── font_embedder.py    # embeds every font in the output (installed fonts / built-in base-14 / raster fallback)
 ├── requirements.txt    # Flask, PyMuPDF, waitress
 ├── README.md
 └── templates/
@@ -70,6 +71,7 @@ For each chapter, in the order you set:
 - **Removes blank pages** (optional) left over from exports.
 - **Starts chapters on right-hand pages** (optional), adding a blank verso where needed.
 - **Adds page numbers** (optional), centered in the bottom margin using an embedded font.
+- **Embeds all fonts** automatically, which KDP requires. Fonts missing from a chapter are added from fonts installed on your computer, or from built-in metric-identical versions of the standard fonts (Helvetica, Times, Courier, Symbol, ZapfDingbats). If a font isn't installed, a metric-compatible or similar font is used and the app tells you. Pages that use an uninstalled *composite* (CID) font are converted to 400-DPI images, the only safe option. The finished file is re-checked to confirm every font is embedded.
 - **Keeps original type size** by default. Content is only scaled down to fit, never enlarged, unless you turn on *Allow enlarging*.
 
 The finished file:
@@ -85,7 +87,7 @@ The finished file:
 
 - The inside margin is below KDP's minimum gutter for the final page count (0.375″ up to 150 pages, 0.5″ up to 300, 0.625″ up to 500, 0.75″ up to 700, 0.875″ up to 828).
 - The book has more than 828 pages.
-- **Fonts are not embedded.** KDP requires embedded fonts. Re-export the listed chapters from Word, Google Docs, LibreOffice or InDesign with "embed fonts" / "PDF/X" turned on.
+- **A font could not be embedded** (rare, because fonts are embedded automatically). Re-export the listed chapters from Word, Google Docs, LibreOffice or InDesign with "embed fonts" / "PDF/X" turned on.
 
 **Warnings:**
 

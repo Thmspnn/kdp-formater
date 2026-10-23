@@ -19,8 +19,14 @@ no annotations / links / form fields (only page content is transferred), and is
 saved with garbage collection and compression.
 
 A preflight report is returned with KDP-relevant warnings: page-count limits,
-the minimum gutter for the final page count, non-embedded fonts, low-resolution
-images, heavy down-scaling and probable two-page spreads.
+the minimum gutter for the final page count, low-resolution images, heavy
+down-scaling and probable two-page spreads.
+
+Every font in the output is embedded (see font_embedder.py): missing font
+programs are added from installed fonts or MuPDF's built-in metric-identical
+base-14 fonts; pages using an un-substitutable composite font are rasterized.
+The saved file is re-checked, so "kdp_ready" is never reported with an
+unembedded font.
 """
 
 from __future__ import annotations
@@ -30,6 +36,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape as _xml_escape
+
+from font_embedder import RASTER_DPI, embed_all_fonts, non_embedded_font_names
 
 try:  # PyMuPDF >= 1.24.3 exposes "pymupdf"; avoids clashing with the unrelated PyPI "fitz" package
     import pymupdf as fitz
@@ -149,6 +157,9 @@ class ProcessReport:
     errors: List[str] = field(default_factory=list)
     required_gutter_in: float = 0.0
     kdp_ready: bool = True
+    fonts_embedded: List[str] = field(default_factory=list)   # fonts that had to be embedded
+    rasterized_pages: List[int] = field(default_factory=list)  # 1-based output pages
+    all_fonts_embedded: bool = True
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -457,6 +468,9 @@ def process_chapters(
             except Exception:
                 warnings.append("Document language could not be set; continuing without it.")
 
+        # ---------------- embed all fonts ----------------
+        font_result = embed_all_fonts(out)
+
         page_count = out.page_count
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         out.save(output_path, garbage=4, deflate=True, deflate_images=True,
@@ -479,12 +493,34 @@ def process_chapters(
         )
     if page_count > KDP_MAX_PAGES:
         errors.append(f"The book has {page_count} pages; KDP paperbacks allow at most {KDP_MAX_PAGES}.")
-    if fonts_missing:
-        details = "; ".join(f"\"{n}\": {', '.join(f[:5])}{'…' if len(f) > 5 else ''}"
-                            for n, f in fonts_missing.items())
-        errors.append(
-            "Some fonts are not embedded (KDP rejects these). Re-export the affected chapters "
-            f"with 'embed all fonts' enabled — {details}."
+    # Re-check the file that was actually written.
+    try:
+        check = fitz.open(output_path)
+        try:
+            still_missing = non_embedded_font_names(check)
+        finally:
+            check.close()
+    except Exception as exc:  # pragma: no cover - defensive
+        still_missing = ["(font check failed: %s)" % exc]
+    if still_missing:
+        errors.append("These fonts could not be embedded: " + ", ".join(still_missing[:8]) +
+                      ". Re-export the affected chapters with 'embed all fonts' enabled.")
+    if font_result.embedded:
+        chapters_txt = ", ".join('"%s"' % n for n in fonts_missing) or "the chapters"
+        substituted = [m for m in font_result.embedded if "(substitute)" in m or "metric-compatible" in m]
+        msg = "Embedded %d font(s) that were missing in %s." % (len(font_result.embedded), chapters_txt)
+        if substituted:
+            msg += (" Not installed on this computer, so a similar font was embedded: " +
+                    "; ".join(substituted[:6]) +
+                    ". Check the look in the reader, or install the original font and regenerate.")
+        warnings.append(msg)
+    if font_result.rasterized_pages:
+        pages = [str(p + 1) for p in font_result.rasterized_pages]
+        shown = ", ".join(pages[:15]) + ("..." if len(pages) > 15 else "")
+        warnings.append(
+            "Page(s) %s use a font that is not installed and cannot be substituted (%s); they were "
+            "converted to %d-DPI images so every font is embedded. Text on those pages is no longer "
+            "selectable." % (shown, ", ".join(font_result.unresolved_fonts[:5]), RASTER_DPI)
         )
     if low_dpi_images:
         warnings.append(
@@ -502,6 +538,9 @@ def process_chapters(
         errors=errors,
         required_gutter_in=gutter,
         kdp_ready=not errors,
+        fonts_embedded=font_result.embedded,
+        rasterized_pages=[p + 1 for p in font_result.rasterized_pages],
+        all_fonts_embedded=not still_missing,
     )
 
 
