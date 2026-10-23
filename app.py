@@ -69,7 +69,10 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     PERMANENT_SESSION_LIFETIME=int(SESSION_TTL_HOURS * 3600),
+    TEMPLATES_AUTO_RELOAD=True,  # always serve the latest index.html without a restart
 )
+app.jinja_env.auto_reload = True
+APP_VERSION = "1.4 (clickable chapter number / thumbnail / name)"
 
 _locks: Dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
@@ -186,6 +189,8 @@ def _security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store"  # never show a stale page after an update
     return response
 
 
@@ -219,6 +224,7 @@ def index():
         trim_sizes=list(TRIM_SIZES.keys()),
         defaults=KDPSettings(),
         max_upload_mb=MAX_UPLOAD_MB,
+        app_version=APP_VERSION,
     )
 
 
