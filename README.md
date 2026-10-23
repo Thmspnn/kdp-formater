@@ -54,6 +54,7 @@ The app runs on the multi-threaded **waitress** server by default. It can also b
 
 1. **Upload chapters.** Drag PDFs onto the drop zone or click it to browse. You can add several files at once, and a progress bar shows the upload. Each chapter is listed with a first-page thumbnail, its page count, file size and original page size.
 2. **Reorder.** Drag a chapter by its grip handle, thumbnail or name. You can also use the ▲/▼ buttons, or focus a row and press `Alt+↑` / `Alt+↓`. The trash icon removes a chapter. The server saves the order straight away, so reloading the page keeps it.
+   **Read a chapter:** click the eye icon ("Read PDF") to open the built-in reader. Use Prev/Next or the `←`/`→` keys to turn pages, pick a zoom of 75–150% (100% is the real printed size), and click **Copy page text** to copy the current page's text. Press `Esc` or × to close.
 3. **Settings.** Enter a title, author and language; these are embedded as PDF metadata. Pick a trim size (6″ × 9″ by default) and set the margins. A live preview shows the recto and verso live areas, and a hint tells you whether your gutter meets KDP's minimum for the current page count.
 4. **Click "Generate KDP-Ready PDF".** A spinner shows while the book is processed. When it finishes, the file downloads automatically and a direct download link stays on the page. The page also shows a **preflight report** with the page count, where each chapter starts, the scale applied, and any KDP problems found.
 5. In KDP, upload the file as your paperback **manuscript** and choose the same trim size with **No bleed**.
@@ -110,6 +111,9 @@ The finished file:
 | `DELETE` | `/files/<id>` | Remove a chapter |
 | `POST` | `/files/clear` | Remove all chapters |
 | `GET` | `/files/<id>/thumbnail` | PNG of the first page |
+| `GET` | `/files/<id>/info` | Chapter name, page count and page size |
+| `GET` | `/files/<id>/page/<n>` | Page `n` (1-based) rendered as a 150 DPI PNG; 404 if out of range |
+| `GET` | `/files/<id>/text/<n>` | `{"ok": true, "text": "..."}` with the plain text of page `n` |
 | `POST` | `/generate` | JSON settings (`title`, `author`, `trim_size`, `margin_*_in`, toggles). Returns the report and `download_url` |
 | `GET` | `/download/<filename>` | Downloads the generated PDF |
 

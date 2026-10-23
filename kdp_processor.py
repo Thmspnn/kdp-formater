@@ -522,6 +522,37 @@ def inspect_pdf(path: str, display_name: str) -> dict:
         doc.close()
 
 
+def _open_for_reading(path: str) -> fitz.Document:
+    doc = fitz.open(path)
+    if doc.needs_pass and not doc.authenticate(""):
+        doc.close()
+        raise KDPProcessingError("This PDF is password-protected.")
+    return doc
+
+
+def render_page_png(path: str, page_num: int, dpi: int = 150) -> Optional[bytes]:
+    """Render a 1-based page to PNG bytes; None if the page does not exist."""
+    doc = _open_for_reading(path)
+    try:
+        if not 1 <= page_num <= doc.page_count:
+            return None
+        zoom = dpi / PT_PER_INCH
+        return doc[page_num - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False).tobytes("png")
+    finally:
+        doc.close()
+
+
+def extract_page_text(path: str, page_num: int) -> Optional[str]:
+    """Plain text of a 1-based page; None if the page does not exist."""
+    doc = _open_for_reading(path)
+    try:
+        if not 1 <= page_num <= doc.page_count:
+            return None
+        return doc[page_num - 1].get_text("text")
+    finally:
+        doc.close()
+
+
 def render_thumbnail(path: str, out_png: str, width_px: int = 96) -> None:
     """Render the first page of a PDF to a small PNG thumbnail."""
     doc = fitz.open(path)

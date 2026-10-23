@@ -25,8 +25,8 @@ from flask import (Flask, abort, jsonify, render_template, request, send_from_di
                    session)
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
-from kdp_processor import (TRIM_SIZES, KDPProcessingError, KDPSettings, inspect_pdf,
-                           process_chapters, render_thumbnail)
+from kdp_processor import (TRIM_SIZES, KDPProcessingError, KDPSettings, extract_page_text,
+                           inspect_pdf, process_chapters, render_page_png, render_thumbnail)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.environ.get("KDP_DATA_DIR", os.path.join(BASE_DIR, "instance")))
@@ -345,6 +345,57 @@ def thumbnail(file_id: str):
     response = send_from_directory(os.path.dirname(png_path), os.path.basename(png_path), mimetype="image/png")
     response.headers["Cache-Control"] = "private, max-age=86400"
     return response
+
+
+# ----------------------------- PDF reader ---------------------------------- #
+
+READER_DPI = 150
+
+
+def _reader_chapter(file_id: str):
+    """Return (pdf_path, manifest_entry) for a chapter of this session, or abort 404."""
+    if not ID_RE.match(file_id):
+        abort(404, description="Chapter not found.")
+    sid = _session_id()
+    with _lock_for(sid):
+        entry = next((f for f in _load_manifest(sid)["files"] if f["id"] == file_id), None)
+    pdf_path = _chapter_path(sid, file_id)
+    if entry is None or not os.path.exists(pdf_path):
+        abort(404, description="Chapter not found.")
+    return pdf_path, entry
+
+
+@app.get("/files/<file_id>/info")
+def chapter_info(file_id: str):
+    _, entry = _reader_chapter(file_id)
+    return jsonify({"ok": True, "name": entry["name"], "pages": entry["pages"],
+                    "width_in": entry["width_in"], "height_in": entry["height_in"]})
+
+
+@app.get("/files/<file_id>/page/<int:page_num>")
+def chapter_page(file_id: str, page_num: int):
+    pdf_path, _ = _reader_chapter(file_id)
+    try:
+        png = render_page_png(pdf_path, page_num, READER_DPI)
+    except KDPProcessingError as exc:
+        abort(422, description=str(exc))
+    if png is None:
+        abort(404, description="Page not found.")
+    response = app.response_class(png, mimetype="image/png")
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
+
+
+@app.get("/files/<file_id>/text/<int:page_num>")
+def chapter_text(file_id: str, page_num: int):
+    pdf_path, _ = _reader_chapter(file_id)
+    try:
+        text = extract_page_text(pdf_path, page_num)
+    except KDPProcessingError as exc:
+        return _error(str(exc), 422)
+    if text is None:
+        return _error("Page not found.", 404)
+    return jsonify({"ok": True, "text": text})
 
 
 def _parse_settings(payload: dict) -> KDPSettings:
