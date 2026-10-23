@@ -131,6 +131,15 @@ def _chapter_path(sid: str, file_id: str) -> str:
     return os.path.join(_session_dir(sid), "chapters", f"{file_id}.pdf")
 
 
+def _safe_remove(path: str) -> None:
+    """Delete a file, ignoring errors (e.g. Windows still holding a lock on it)."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        log.warning("Could not delete %s", path)
+
+
 def _public_files(manifest: dict) -> List[dict]:
     return [{k: f[k] for k in ("id", "name", "pages", "size", "width_in", "height_in")}
             for f in manifest["files"]]
@@ -227,7 +236,7 @@ def upload():
     if not incoming:
         return _error("No files received. Choose one or more PDF chapters.")
 
-    added, rejected = [], []
+    added, rejected, warnings = [], [], []
     with _lock_for(sid):
         manifest = _load_manifest(sid)
         for storage in incoming:
@@ -236,23 +245,26 @@ def upload():
             if len(manifest["files"]) >= MAX_FILES:
                 rejected.append({"name": name, "error": f"Maximum of {MAX_FILES} chapters reached."})
                 continue
-            if not name.lower().endswith(".pdf"):
-                rejected.append({"name": name, "error": "Only .pdf files are accepted."})
-                continue
-            head = storage.stream.read(1024)
+            # Identify PDFs by content, not by file extension (some apps drop or change it).
+            head = storage.stream.read(64 * 1024)
             storage.stream.seek(0)
             if b"%PDF-" not in head:
-                rejected.append({"name": name, "error": "File is not a valid PDF."})
+                rejected.append({"name": name, "error": "This file is not a PDF. Export/save the chapter as PDF first."})
                 continue
 
             file_id = uuid.uuid4().hex
             dest = _chapter_path(sid, file_id)
-            storage.save(dest)
             try:
+                storage.save(dest)
                 facts = inspect_pdf(dest, name)
             except KDPProcessingError as exc:
-                os.remove(dest)
+                _safe_remove(dest)
                 rejected.append({"name": name, "error": str(exc)})
+                continue
+            except Exception as exc:  # one bad file must never fail the whole batch
+                log.exception("Could not import %s", name)
+                _safe_remove(dest)
+                rejected.append({"name": name, "error": f"Could not read this PDF ({type(exc).__name__}: {exc})."})
                 continue
             entry = {
                 "id": file_id,
@@ -261,13 +273,15 @@ def upload():
                 "uploaded_at": datetime.now().isoformat(timespec="seconds"),
                 **facts,
             }
+            if entry.pop("repaired", False):
+                warnings.append({"name": name, "warning": "This PDF is damaged and was auto-repaired; some pages may be missing or blank. Re-export it if possible."})
             manifest["files"].append(entry)
             added.append(entry["id"])
         _save_manifest(sid, manifest)
         files = _public_files(manifest)
     _touch(sid)
     log.info("Session %s: %d uploaded, %d rejected", sid[:8], len(added), len(rejected))
-    return jsonify({"ok": True, "files": files, "added": added, "rejected": rejected})
+    return jsonify({"ok": True, "files": files, "added": added, "rejected": rejected, "warnings": warnings})
 
 
 @app.post("/reorder")

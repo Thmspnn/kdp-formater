@@ -250,6 +250,15 @@
 </style>
 </head>
 <body>
+<script>
+  /* Standalone guard: runs even when the template was opened without Flask (main script can't parse then). */
+  if (location.protocol === "file:") {
+    document.write('<div style="background:#b42318;color:#fff;padding:14px 18px;font:600 15px/1.5 system-ui;text-align:center">' +
+      'This page was opened directly as a file, so uploads cannot work. Open a terminal in the kdp_formatter folder, run ' +
+      '<code style="background:rgba(0,0,0,.25);padding:2px 6px;border-radius:4px">python app.py</code>, then go to ' +
+      '<a style="color:#fff" href="http://localhost:5000">http://localhost:5000</a>.</div>');
+  }
+</script>
 <header class="top">
   <div class="brand">
     <div class="logo" aria-hidden="true">
@@ -498,9 +507,11 @@
 
   /* ------------------------------ upload ------------------------------ */
   function uploadFiles(fileList) {
-    const pdfs = Array.from(fileList).filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
-    const skipped = fileList.length - pdfs.length;
-    if (skipped) toast(`${skipped} non-PDF file${skipped > 1 ? "s were" : " was"} ignored.`, "warn");
+    if (location.protocol === "file:") { showServerHelp(); return; }
+    // Send every file; the server checks the actual content (some apps drop the .pdf extension).
+    const pdfs = Array.from(fileList || []).filter((f) => f && f.size > 0);
+    const skipped = (fileList ? fileList.length : 0) - pdfs.length;
+    if (skipped) toast(`${skipped} empty item${skipped > 1 ? "s were" : " was"} ignored (folders can't be uploaded — select the PDF files inside).`, "warn", 7000);
     if (!pdfs.length) return;
 
     const form = new FormData();
@@ -519,7 +530,11 @@
     };
     xhr.onload = () => {
       els.progress.classList.remove("show");
-      const data = xhr.response || {};
+      let data = xhr.response;
+      if (!data || typeof data !== "object") {
+        toast(`Upload failed (${xhr.status}): the server returned an unexpected response. Check the terminal running app.py.`, "err", 12000);
+        return;
+      }
       if (xhr.status >= 400 || data.ok === false) {
         toast(data.error || `Upload failed (${xhr.status}).`, "err", 9000);
         return;
@@ -528,10 +543,14 @@
       render();
       if (data.added.length) toast(`Added ${data.added.length} chapter${data.added.length > 1 ? "s" : ""}.`, "ok", 3000);
       (data.rejected || []).forEach((r) => toast(`${r.name}: ${r.error}`, "err", 10000));
+      (data.warnings || []).forEach((w) => toast(`${w.name}: ${w.warning}`, "warn", 12000));
       hideResult();
     };
-    xhr.onerror = () => { els.progress.classList.remove("show"); toast("Upload failed: cannot reach the local server.", "err"); };
+    xhr.onerror = () => { els.progress.classList.remove("show"); showServerHelp(); };
     xhr.send(form);
+  }
+  function showServerHelp() {
+    toast("Can't reach the KDP Formatter server. Start it with \"python app.py\" in the kdp_formatter folder, then open http://localhost:5000 (don't double-click index.html).", "err", 15000);
   }
   function setBar(pct) { els.pBar.style.width = `${pct}%`; els.pPct.textContent = `${pct}%`; }
 

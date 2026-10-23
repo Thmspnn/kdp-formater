@@ -31,7 +31,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape as _xml_escape
 
-import fitz  # PyMuPDF
+try:  # PyMuPDF >= 1.24.3 exposes "pymupdf"; avoids clashing with the unrelated PyPI "fitz" package
+    import pymupdf as fitz
+except ImportError:  # older PyMuPDF
+    import fitz  # type: ignore
 
 PT_PER_INCH = 72.0
 
@@ -507,8 +510,11 @@ def inspect_pdf(path: str, display_name: str) -> dict:
     doc = _open_source(path, display_name)
     try:
         first = doc[0].rect
+        if first.is_empty or first.width < 1 or first.height < 1:
+            raise KDPProcessingError(f"\"{display_name}\" has an invalid page size.")
         return {
             "pages": doc.page_count,
+            "repaired": bool(getattr(doc, "is_repaired", False)),
             "width_in": round(first.width / PT_PER_INCH, 2),
             "height_in": round(first.height / PT_PER_INCH, 2),
         }
