@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KDP Formatter — Local Chapter Merger</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-2: #131a24;
+    --panel: #161e2b;
+    --panel-2: #1c2636;
+    --border: #263247;
+    --text: #e6edf6;
+    --muted: #8b9ab1;
+    --accent: #f5a524;
+    --accent-2: #ffbe4d;
+    --accent-ink: #1b1200;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --info: #60a5fa;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(245, 165, 36, .10), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(96, 165, 250, .08), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- header ---------- */
+  header.top {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 18px 32px; border-bottom: 1px solid var(--border);
+    background: rgba(13, 17, 23, .7); backdrop-filter: blur(10px);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), #f97316); color: var(--accent-ink);
+    box-shadow: 0 6px 18px rgba(245, 165, 36, .35);
+  }
+  .brand h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  .brand p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ok);
+    border: 1px solid rgba(52, 211, 153, .35); background: rgba(52, 211, 153, .08);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+
+  /* ---------- layout ---------- */
+  main {
+    max-width: 1320px; margin: 0 auto; padding: 28px 32px 60px;
+    display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr); gap: 24px;
+  }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 20px 16px 48px; } header.top { padding: 14px 16px; } }
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--bg-2));
+    border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+  }
+  .card-head h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  .step {
+    width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 700;
+    display: grid; place-items: center; background: rgba(245, 165, 36, .15); color: var(--accent);
+    border: 1px solid rgba(245, 165, 36, .4);
+  }
+  .card-body { padding: 20px 22px; }
+  .stack { display: grid; gap: 24px; align-content: start; }
+
+  /* ---------- dropzone ---------- */
+  .dropzone {
+    position: relative; border: 2px dashed #34445f; border-radius: 12px; padding: 34px 20px;
+    text-align: center; cursor: pointer; transition: border-color .2s, background .2s, transform .2s;
+    background: rgba(255, 255, 255, .015); outline: none;
+  }
+  .dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: rgba(245, 165, 36, .04); }
+  .dropzone.drag { border-color: var(--accent); background: rgba(245, 165, 36, .08); transform: scale(1.01); }
+  .dropzone .icon {
+    width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 14px; display: grid; place-items: center;
+    background: rgba(245, 165, 36, .12); color: var(--accent);
+  }
+  .dropzone strong { display: block; font-size: 16px; }
+  .dropzone span { color: var(--muted); font-size: 13.5px; }
+  .dropzone .link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  .progress { margin-top: 16px; display: none; }
+  .progress.show { display: block; }
+  .progress-row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  .bar { height: 8px; border-radius: 99px; background: #0f1520; overflow: hidden; border: 1px solid var(--border); }
+  .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #f97316); transition: width .15s; }
+
+  /* ---------- chapter list ---------- */
+  .list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 10px; }
+  .list-toolbar .meta { font-size: 13px; color: var(--muted); }
+  .list-toolbar .meta b { color: var(--text); }
+  ol.chapters { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .chapter {
+    display: grid; grid-template-columns: auto auto 46px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--border);
+    user-select: none; touch-action: pan-y; transition: box-shadow .2s, border-color .2s, background .2s;
+  }
+  .chapter:hover { border-color: #33435e; }
+  .chapter.dragging {
+    border-color: var(--accent); background: #212d40; box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 0 0 1px var(--accent);
+    position: relative; z-index: 5; cursor: grabbing;
+  }
+  .handle {
+    cursor: grab; color: var(--muted); padding: 6px 4px; border-radius: 6px; display: grid; place-items: center;
+    touch-action: none; background: none; border: 0;
+  }
+  .handle:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+  .num {
+    min-width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+    font-weight: 700; font-size: 13px; color: var(--accent); background: rgba(245, 165, 36, .1);
+  }
+  .thumb {
+    width: 46px; height: 60px; border-radius: 4px; background: #fff; object-fit: cover;
+    border: 1px solid #3a4a64; box-shadow: 0 3px 8px rgba(0, 0, 0, .35);
+  }
+  .info { min-width: 0; }
+  .info .name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info .sub { font-size: 12.5px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .info .sub .tag { padding: 0 7px; border-radius: 6px; background: rgba(96, 165, 250, .1); color: var(--info); }
+  .actions { display: flex; gap: 4px; }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; cursor: pointer;
+    border: 1px solid transparent; background: transparent; color: var(--muted); transition: all .15s;
+  }
+  .icon-btn:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, .06); border-color: var(--border); }
+  .icon-btn.danger:hover:not(:disabled) { color: var(--err); background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); }
+  .icon-btn:disabled { opacity: .3; cursor: not-allowed; }
+  .empty {
+    text-align: center; padding: 34px 16px; color: var(--muted); font-size: 14px;
+    border: 1px dashed var(--border); border-radius: 12px;
+  }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+    border-radius: 10px; padding: 9px 14px; border: 1px solid var(--border); background: var(--panel-2);
+    font-size: 13.5px; font-weight: 600; transition: all .15s; text-decoration: none;
+  }
+  .btn:hover:not(:disabled) { border-color: #3b4c6a; background: #223047; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.ghost { background: transparent; }
+  .btn.primary {
+    width: 100%; padding: 15px 18px; font-size: 15.5px; border: 0; color: var(--accent-ink);
+    background: linear-gradient(135deg, var(--accent-2), var(--accent) 50%, #f97316);
+    box-shadow: 0 10px 24px rgba(245, 165, 36, .3);
+  }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .btn.primary:disabled { filter: grayscale(.6); box-shadow: none; }
+  .btn.success { background: rgba(52, 211, 153, .12); border-color: rgba(52, 211, 153, .45); color: var(--ok); }
+  .btn.success:hover { background: rgba(52, 211, 153, .2); }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(27, 18, 0, .25);
+    border-top-color: var(--accent-ink); animation: spin .8s linear infinite; display: none;
+  }
+  .busy .spinner { display: inline-block; }
+  .busy .btn-icon { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- form ---------- */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field { display: grid; gap: 6px; }
+  .field label { font-size: 12.5px; color: var(--muted); font-weight: 600; letter-spacing: .2px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: #0f1520; outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245, 165, 36, .15); }
+  .field .unit { position: relative; }
+  .field .unit input { padding-right: 34px; }
+  .field .unit::after { content: "in"; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; }
+  .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 20px 0 10px; font-weight: 700; }
+  .section-title:first-child { margin-top: 0; }
+  .toggles { display: grid; gap: 10px; }
+  .toggle { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .toggle .switch {
+    flex: none; width: 38px; height: 22px; border-radius: 99px; background: #2a374d; position: relative; transition: background .2s; margin-top: 1px;
+  }
+  .toggle .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #c7d2e3; transition: transform .2s, background .2s;
+  }
+  .toggle input:checked + .switch { background: var(--accent); }
+  .toggle input:checked + .switch::after { transform: translateX(16px); background: #fff; }
+  .toggle input:focus-visible + .switch { box-shadow: 0 0 0 3px rgba(245, 165, 36, .3); }
+  .toggle .t-text b { display: block; font-size: 13.5px; font-weight: 600; }
+  .toggle .t-text small { color: var(--muted); font-size: 12px; }
+
+  /* ---------- page preview ---------- */
+  .preview { display: flex; justify-content: center; gap: 4px; padding: 16px; background: #0f1520; border-radius: 12px; border: 1px solid var(--border); margin-top: 12px; }
+  .pg { position: relative; background: #f8f5ee; border-radius: 2px; box-shadow: 0 6px 16px rgba(0, 0, 0, .45); }
+  .pg .live { position: absolute; border: 1px dashed rgba(245, 120, 20, .9); background: repeating-linear-gradient(180deg, rgba(40, 40, 40, .16) 0 2px, transparent 2px 7px); }
+  .pg .lbl { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 10.5px; color: var(--muted); }
+  .preview-wrap { padding-bottom: 14px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hint.warn { color: var(--warn); }
+
+  /* ---------- alerts & results ---------- */
+  .toasts { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 10px; z-index: 50; max-width: min(420px, calc(100vw - 40px)); }
+  .alert {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; font-size: 13.5px;
+    border: 1px solid; background: var(--panel); box-shadow: var(--shadow);
+  }
+  .toasts .alert { animation: slide .25s ease-out; }
+  @keyframes slide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .alert.ok { border-color: rgba(52, 211, 153, .4); color: #b5f5dc; }
+  .alert.err { border-color: rgba(248, 113, 113, .45); color: #fecaca; }
+  .alert.warn { border-color: rgba(251, 191, 36, .4); color: #fde68a; }
+  .alert.info { border-color: rgba(96, 165, 250, .4); color: #c7dcfe; }
+  .alert .x { margin-left: auto; cursor: pointer; background: none; border: 0; color: inherit; opacity: .7; font-size: 16px; line-height: 1; }
+  #inlineStatus { margin-top: 14px; display: grid; gap: 8px; }
+  .result { display: none; }
+  .result.show { display: block; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat { background: #0f1520; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .stat .v { font-size: 18px; font-weight: 700; }
+  .stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .verdict { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; margin-bottom: 14px; font-weight: 600; font-size: 14px; }
+  .verdict.good { background: rgba(52, 211, 153, .1); color: var(--ok); border: 1px solid rgba(52, 211, 153, .35); }
+  .verdict.bad { background: rgba(248, 113, 113, .1); color: var(--err); border: 1px solid rgba(248, 113, 113, .35); }
+  table.toc { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+  table.toc th, table.toc td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  table.toc th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; }
+  table.toc td.n { text-align: right; font-family: var(--mono); }
+  table.toc td.name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .issues { display: grid; gap: 8px; margin-top: 12px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 16px 30px; }
+  kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: #0f1520; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg>
+    </div>
+    <div>
+      <h1>KDP Formatter</h1>
+      <p>Merge chapter PDFs into an Amazon KDP-ready print interior</p>
+    </div>
+  </div>
+  <div class="badge" title="All processing happens on this computer. No files leave your machine."><span class="dot"></span>100% local &middot; offline</div>
+</header>
+
+<main>
+  <!-- ================= LEFT: upload + chapters ================= -->
+  <section class="card" aria-labelledby="chaptersTitle">
+    <div class="card-head">
+      <h2 id="chaptersTitle"><span class="step">1</span> Upload &amp; order chapters</h2>
+      <button class="btn ghost" id="clearBtn" type="button" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        Clear all
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-describedby="dzHelp">
+        <div class="icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <strong>Drop chapter PDFs here</strong>
+        <span id="dzHelp">or <span class="link">click to browse</span> &middot; multiple files &middot; up to {{ max_upload_mb }} MB per batch</span>
+        <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+      </div>
+      <div class="progress" id="progress" aria-live="polite">
+        <div class="progress-row"><span id="progressLabel">Uploading…</span><span id="progressPct">0%</span></div>
+        <div class="bar"><i id="progressBar"></i></div>
+      </div>
+
+      <div class="list-toolbar">
+        <div class="meta" id="listMeta"><b>0</b> chapters &middot; <b>0</b> source pages</div>
+        <div class="meta">Drag <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg> to reorder &middot; <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd></div>
+      </div>
+      <ol class="chapters" id="chapterList" aria-label="Chapter order"></ol>
+      <div class="empty" id="emptyState">No chapters yet. Upload your chapter PDFs above — they will be merged top to bottom.</div>
+    </div>
+  </section>
+
+  <!-- ================= RIGHT: settings + generate ================= -->
+  <div class="stack">
+    <section class="card" aria-labelledby="settingsTitle">
+      <div class="card-head"><h2 id="settingsTitle"><span class="step">2</span> Book &amp; KDP settings</h2></div>
+      <div class="card-body">
+        <form id="settingsForm" autocomplete="off" onsubmit="return false">
+          <div class="section-title">Metadata</div>
+          <div class="field" style="margin-bottom:12px">
+            <label for="title">Book title</label>
+            <input id="title" name="title" maxlength="300" placeholder="e.g. The Silent Harbor">
+          </div>
+          <div class="grid-2" style="margin-bottom:12px">
+            <div class="field">
+              <label for="author">Author</label>
+              <input id="author" name="author" maxlength="300" placeholder="Author name">
+            </div>
+            <div class="field">
+              <label for="language">Language</label>
+              <select id="language" name="language">
+                <option value="en-US">English (US)</option><option value="en-GB">English (UK)</option>
+                <option value="es-ES">Spanish</option><option value="fr-FR">French</option>
+                <option value="de-DE">German</option><option value="it-IT">Italian</option>
+                <option value="pt-BR">Portuguese</option><option value="nl-NL">Dutch</option>
+                <option value="ja-JP">Japanese</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="subject">Subject / subtitle</label>
+              <input id="subject" name="subject" maxlength="300" placeholder="Optional">
+            </div>
+            <div class="field">
+              <label for="keywords">Keywords</label>
+              <input id="keywords" name="keywords" maxlength="300" placeholder="comma, separated">
+            </div>
+          </div>
+
+          <div class="section-title">Trim size &amp; margins</div>
+          <div class="field" style="margin-bottom:12px">
+            <label for="trim_size">Trim size (paperback, no bleed)</label>
+            <select id="trim_size" name="trim_size">
+              {% for t in trim_sizes %}<option value="{{ t }}" {% if t == '6x9' %}selected{% endif %}>{{ t.replace('x', '" × ') }}"</option>{% endfor %}
+            </select>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label for="margin_top_in">Top</label><div class="unit"><input type="number" id="margin_top_in" name="margin_top_in" step="0.025" min="0.25" max="3" value="{{ defaults.margin_top_in }}"></div></div>
+            <div class="field"><label for="margin_bottom_in">Bottom</label><div class="unit"><input type="number" id="margin_bottom_in" name="margin_bottom_in" step="0.025" min="0.25" max="3" value="{{ defaults.margin_bottom_in }}"></div></div>
+            <div class="field"><label for="margin_inner_in">Inside (gutter)</label><div class="unit"><input type="number" id="margin_inner_in" name="margin_inner_in" step="0.025" min="0.25" max="3" value="{{ defaults.margin_inner_in }}"></div></div>
+            <div class="field"><label for="margin_outer_in">Outside</label><div class="unit"><input type="number" id="margin_outer_in" name="margin_outer_in" step="0.025" min="0.25" max="3" value="{{ defaults.margin_outer_in }}"></div></div>
+          </div>
+          <div class="preview-wrap">
+            <div class="preview" id="preview" aria-hidden="true">
+              <div class="pg" id="pgVerso"><div class="live"></div><div class="lbl">verso (even)</div></div>
+              <div class="pg" id="pgRecto"><div class="live"></div><div class="lbl">recto (odd)</div></div>
+            </div>
+          </div>
+          <div class="hint" id="gutterHint"></div>
+
+          <div class="section-title">Layout clean-up</div>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" name="trim_whitespace" checked><span class="switch"></span>
+              <span class="t-text"><b>Trim original margins</b><small>Detect each chapter's text block and re-fit it inside the KDP live area.</small></span></label>
+            <label class="toggle"><input type="checkbox" name="remove_blank_pages" checked><span class="switch"></span>
+              <span class="t-text"><b>Remove blank pages</b><small>Drop empty pages left over from exports.</small></span></label>
+            <label class="toggle"><input type="checkbox" name="chapters_start_recto"><span class="switch"></span>
+              <span class="t-text"><b>Start chapters on right-hand pages</b><small>Inserts a blank verso where needed (traditional book layout).</small></span></label>
+            <label class="toggle"><input type="checkbox" name="add_page_numbers"><span class="switch"></span>
+              <span class="t-text"><b>Add page numbers</b><small>Centered in the bottom margin with an embedded font. Leave off if chapters already have them.</small></span></label>
+            <label class="toggle"><input type="checkbox" name="allow_upscale"><span class="switch"></span>
+              <span class="t-text"><b>Allow enlarging small content</b><small>Off keeps original type size when content is smaller than the live area.</small></span></label>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="genTitle">
+      <div class="card-head"><h2 id="genTitle"><span class="step">3</span> Generate</h2></div>
+      <div class="card-body">
+        <button class="btn primary" id="generateBtn" type="button" disabled>
+          <span class="spinner" aria-hidden="true"></span>
+          <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          <span id="generateLabel">Generate KDP-Ready PDF</span>
+        </button>
+        <div id="inlineStatus" aria-live="polite"></div>
+
+        <div class="result" id="result">
+          <div class="section-title" style="margin-top:20px">Result</div>
+          <div class="verdict" id="verdict"></div>
+          <div class="stats">
+            <div class="stat"><div class="v" id="statPages">–</div><div class="k">Pages</div></div>
+            <div class="stat"><div class="v" id="statTrim">–</div><div class="k">Trim</div></div>
+            <div class="stat"><div class="v" id="statSize">–</div><div class="k">File size</div></div>
+          </div>
+          <a class="btn success" id="downloadLink" href="#" download style="width:100%">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            <span id="downloadName">Download PDF</span>
+          </a>
+          <div class="issues" id="issues"></div>
+          <table class="toc" id="tocTable">
+            <thead><tr><th>Chapter</th><th style="text-align:right">Starts</th><th style="text-align:right">Pages</th><th style="text-align:right">Scale</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+<footer>Files are stored temporarily on this computer only and removed automatically after 24 hours. Upload the generated PDF as your paperback <em>manuscript</em> in KDP.</footer>
+<div class="toasts" id="toasts" aria-live="assertive"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const TRIMS = { {% for t in trim_sizes %}"{{ t }}": [{{ t.split('x')[0] }}, {{ t.split('x')[1] }}],{% endfor %} };
+  const GUTTER_TABLE = [[150, 0.375], [300, 0.5], [500, 0.625], [700, 0.75], [828, 0.875]];
+  const STORAGE_KEY = "kdp-formatter-settings-v1";
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const els = {
+    dz: $("#dropzone"), input: $("#fileInput"), list: $("#chapterList"), empty: $("#emptyState"),
+    meta: $("#listMeta"), clear: $("#clearBtn"), gen: $("#generateBtn"), genLabel: $("#generateLabel"),
+    progress: $("#progress"), pBar: $("#progressBar"), pPct: $("#progressPct"), pLabel: $("#progressLabel"),
+    form: $("#settingsForm"), status: $("#inlineStatus"), result: $("#result"), toasts: $("#toasts"),
+  };
+  let files = [];
+  let busy = false;
+
+  /* ------------------------------ utilities ------------------------------ */
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmtBytes = (b) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+  const requiredGutter = (pages) => (GUTTER_TABLE.find(([max]) => pages <= max) || GUTTER_TABLE[GUTTER_TABLE.length - 1])[1];
+
+  function toast(message, type = "info", timeout = 6000) {
+    const el = document.createElement("div");
+    el.className = `alert ${type}`;
+    el.innerHTML = `<span>${escapeHtml(message)}</span><button class="x" aria-label="Dismiss">×</button>`;
+    el.querySelector(".x").onclick = () => el.remove();
+    els.toasts.appendChild(el);
+    if (timeout) setTimeout(() => el.remove(), timeout);
+  }
+
+  function setStatus(message, type = "info") {
+    els.status.innerHTML = message ? `<div class="alert ${type}"><span>${escapeHtml(message)}</span></div>` : "";
+  }
+
+  async function api(url, options = {}) {
+    let res;
+    try {
+      res = await fetch(url, { credentials: "same-origin", ...options });
+    } catch (e) {
+      throw new Error("Cannot reach the local server. Is app.py still running?");
+    }
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
+    if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed (${res.status}).`);
+    return data;
+  }
+
+  /* ------------------------------ rendering ------------------------------ */
+  const ICONS = {
+    grip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>',
+    up: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 15 6-6 6 6"/></svg>',
+    down: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>',
+    del: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
+  };
+
+  function render() {
+    const focusedId = document.activeElement?.closest?.(".chapter")?.dataset.id;
+    const focusedAction = document.activeElement?.dataset?.action;
+    els.list.innerHTML = files.map((f, i) => `
+      <li class="chapter" data-id="${f.id}" tabindex="0" aria-label="Chapter ${i + 1}: ${escapeHtml(f.name)}">
+        <button class="handle" type="button" aria-label="Drag to reorder" tabindex="-1">${ICONS.grip}</button>
+        <div class="num">${i + 1}</div>
+        <img class="thumb" src="/files/${f.id}/thumbnail" alt="" loading="lazy">
+        <div class="info">
+          <div class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+          <div class="sub"><span>${f.pages} page${f.pages === 1 ? "" : "s"}</span><span>${fmtBytes(f.size)}</span>
+            <span class="tag">${f.width_in}" × ${f.height_in}"</span></div>
+        </div>
+        <div class="actions">
+          <button class="icon-btn" type="button" data-action="up" aria-label="Move up" ${i === 0 ? "disabled" : ""}>${ICONS.up}</button>
+          <button class="icon-btn" type="button" data-action="down" aria-label="Move down" ${i === files.length - 1 ? "disabled" : ""}>${ICONS.down}</button>
+          <button class="icon-btn danger" type="button" data-action="delete" aria-label="Remove chapter">${ICONS.del}</button>
+        </div>
+      </li>`).join("");
+    els.empty.style.display = files.length ? "none" : "block";
+    const pages = files.reduce((s, f) => s + f.pages, 0);
+    els.meta.innerHTML = `<b>${files.length}</b> chapter${files.length === 1 ? "" : "s"} &middot; <b>${pages}</b> source page${pages === 1 ? "" : "s"}`;
+    els.clear.disabled = !files.length || busy;
+    els.gen.disabled = !files.length || busy;
+    if (focusedId) {
+      const li = els.list.querySelector(`[data-id="${focusedId}"]`);
+      const target = focusedAction ? li?.querySelector(`[data-action="${focusedAction}"]:not(:disabled)`) : li;
+      (target || li)?.focus();
+    }
+    updateGutterHint();
+  }
+
+  /* ------------------------------ upload ------------------------------ */
+  function uploadFiles(fileList) {
+    const pdfs = Array.from(fileList).filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+    const skipped = fileList.length - pdfs.length;
+    if (skipped) toast(`${skipped} non-PDF file${skipped > 1 ? "s were" : " was"} ignored.`, "warn");
+    if (!pdfs.length) return;
+
+    const form = new FormData();
+    pdfs.forEach((f) => form.append("files", f, f.name));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload");
+    xhr.responseType = "json";
+    els.progress.classList.add("show");
+    els.pLabel.textContent = `Uploading ${pdfs.length} file${pdfs.length > 1 ? "s" : ""}…`;
+    setBar(0);
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      setBar(pct);
+      if (pct >= 100) els.pLabel.textContent = "Analyzing PDFs…";
+    };
+    xhr.onload = () => {
+      els.progress.classList.remove("show");
+      const data = xhr.response || {};
+      if (xhr.status >= 400 || data.ok === false) {
+        toast(data.error || `Upload failed (${xhr.status}).`, "err", 9000);
+        return;
+      }
+      files = data.files;
+      render();
+      if (data.added.length) toast(`Added ${data.added.length} chapter${data.added.length > 1 ? "s" : ""}.`, "ok", 3000);
+      (data.rejected || []).forEach((r) => toast(`${r.name}: ${r.error}`, "err", 10000));
+      hideResult();
+    };
+    xhr.onerror = () => { els.progress.classList.remove("show"); toast("Upload failed: cannot reach the local server.", "err"); };
+    xhr.send(form);
+  }
+  function setBar(pct) { els.pBar.style.width = `${pct}%`; els.pPct.textContent = `${pct}%`; }
+
+  els.dz.addEventListener("click", () => els.input.click());
+  els.dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.input.click(); } });
+  els.input.addEventListener("change", () => { uploadFiles(els.input.files); els.input.value = ""; });
+  ["dragenter", "dragover"].forEach((ev) => els.dz.addEventListener(ev, (e) => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault(); els.dz.classList.add("drag");
+  }));
+  ["dragleave", "drop"].forEach((ev) => els.dz.addEventListener(ev, (e) => { e.preventDefault(); els.dz.classList.remove("drag"); }));
+  els.dz.addEventListener("drop", (e) => { if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files); });
+  // Prevent the browser from opening PDFs dropped outside the zone.
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  /* ------------------------------ reorder ------------------------------ */
+  async function commitOrder(newOrderIds, previous) {
+    files = newOrderIds.map((id) => files.find((f) => f.id === id));
+    render();
+    hideResult();
+    try {
+      const data = await api("/reorder", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: newOrderIds }),
+      });
+      files = data.files;
+      render();
+    } catch (err) {
+      files = previous;
+      render();
+      toast(err.message, "err");
+    }
+  }
+
+  function move(id, delta) {
+    const idx = files.findIndex((f) => f.id === id);
+    const to = idx + delta;
+    if (idx < 0 || to < 0 || to >= files.length) return;
+    const ids = files.map((f) => f.id);
+    ids.splice(to, 0, ids.splice(idx, 1)[0]);
+    commitOrder(ids, files.slice());
+  }
+
+  // Pointer-based sortable (mouse, pen and touch) with FLIP animation — no external libraries.
+  let drag = null;
+  els.list.addEventListener("pointerdown", (e) => {
+    const handle = e.target.closest(".handle, .info, .thumb, .num");
+    const li = e.target.closest(".chapter");
+    if (!handle || !li || busy || e.button !== 0 || files.length < 2) return;
+    e.preventDefault();
+    drag = { li, pointerId: e.pointerId, startY: e.clientY, startTop: li.offsetTop, before: files.slice(), moved: false };
+    li.setPointerCapture(e.pointerId);
+  });
+  els.list.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dy) < 4) return;
+    if (!drag.moved) { drag.moved = true; drag.li.classList.add("dragging"); document.body.style.cursor = "grabbing"; }
+
+    // Layout positions (offsetTop) ignore transforms, so animations never confuse hit-testing.
+    const li = drag.li;
+    const draggedCenter = drag.startTop + dy + li.offsetHeight / 2;
+    const siblings = Array.from(els.list.children).filter((n) => n !== li);
+    const target = siblings.find((s) => draggedCenter < s.offsetTop + s.offsetHeight / 2) || null;
+    if (target !== li.nextElementSibling) {
+      const firstTops = new Map(siblings.map((s) => [s, s.offsetTop]));
+      els.list.insertBefore(li, target);
+      siblings.forEach((s) => {   // FLIP animation for the items that shifted
+        const delta = firstTops.get(s) - s.offsetTop;
+        if (!delta) return;
+        s.style.transition = "none";
+        s.style.transform = `translateY(${delta}px)`;
+        requestAnimationFrame(() => { s.style.transition = "transform .18s ease"; s.style.transform = ""; });
+      });
+      Array.from(els.list.children).forEach((n, i) => { const num = n.querySelector(".num"); if (num) num.textContent = i + 1; });
+    }
+    li.style.transform = `translateY(${drag.startTop + dy - li.offsetTop}px)`;
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const { li, moved, before } = drag;
+    drag = null;
+    document.body.style.cursor = "";
+    li.classList.remove("dragging");
+    li.style.transform = "";
+    Array.from(els.list.children).forEach((n) => { n.style.transition = ""; n.style.transform = ""; });
+    if (!moved) return;
+    const ids = Array.from(els.list.children).map((n) => n.dataset.id);
+    if (ids.join() !== before.map((f) => f.id).join()) commitOrder(ids, before);
+  };
+  els.list.addEventListener("pointerup", endDrag);
+  els.list.addEventListener("pointercancel", endDrag);
+
+  els.list.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn || busy) return;
+    const id = btn.closest(".chapter").dataset.id;
+    const action = btn.dataset.action;
+    if (action === "up") move(id, -1);
+    else if (action === "down") move(id, 1);
+    else if (action === "delete") {
+      const f = files.find((x) => x.id === id);
+      try {
+        const data = await api(`/files/${id}`, { method: "DELETE" });
+        files = data.files; render(); hideResult();
+        toast(`Removed “${f ? f.name : "chapter"}”.`, "info", 2500);
+      } catch (err) { toast(err.message, "err"); }
+    }
+  });
+  els.list.addEventListener("keydown", (e) => {
+    const li = e.target.closest(".chapter");
+    if (!li || busy) return;
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault(); move(li.dataset.id, e.key === "ArrowUp" ? -1 : 1);
+    } else if (e.target === li && e.key === "Delete") {
+      li.querySelector('[data-action="delete"]').click();
+    }
+  });
+
+  els.clear.addEventListener("click", async () => {
+    if (!files.length || !confirm(`Remove all ${files.length} chapters?`)) return;
+    try { const data = await api("/files/clear", { method: "POST" }); files = data.files; render(); hideResult(); }
+    catch (err) { toast(err.message, "err"); }
+  });
+
+  /* ------------------------------ settings ------------------------------ */
+  function readSettings() {
+    const fd = new FormData(els.form);
+    const out = {};
+    for (const el of els.form.elements) {
+      if (!el.name) continue;
+      out[el.name] = el.type === "checkbox" ? el.checked : (el.type === "number" ? parseFloat(fd.get(el.name)) : String(fd.get(el.name) || "").trim());
+    }
+    return out;
+  }
+  function saveSettings() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(readSettings())); } catch (e) { /* storage disabled */ } }
+  function loadSettings() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) { saved = null; }
+    if (!saved) return;
+    for (const el of els.form.elements) {
+      if (!el.name || !(el.name in saved)) continue;
+      if (el.type === "checkbox") el.checked = !!saved[el.name];
+      else if (el.tagName === "SELECT") { if ([...el.options].some((o) => o.value === saved[el.name])) el.value = saved[el.name]; }
+      else el.value = saved[el.name];
+    }
+  }
+
+  function updatePreview() {
+    const s = readSettings();
+    const [w, h] = TRIMS[s.trim_size] || [6, 9];
+    const scale = 120 / h;
+    const pw = w * scale, ph = h * scale;
+    const set = (pg, recto) => {
+      pg.style.width = `${pw}px`; pg.style.height = `${ph}px`;
+      const live = pg.querySelector(".live");
+      const left = (recto ? s.margin_inner_in : s.margin_outer_in) || 0;
+      const right = (recto ? s.margin_outer_in : s.margin_inner_in) || 0;
+      live.style.left = `${left * scale}px`; live.style.right = `${right * scale}px`;
+      live.style.top = `${(s.margin_top_in || 0) * scale}px`; live.style.bottom = `${(s.margin_bottom_in || 0) * scale}px`;
+    };
+    set($("#pgVerso"), false);
+    set($("#pgRecto"), true);
+    updateGutterHint();
+  }
+
+  function updateGutterHint() {
+    const hint = $("#gutterHint");
+    const s = readSettings();
+    const pages = files.reduce((acc, f) => acc + f.pages, 0);
+    const problems = [];
+    ["margin_top_in", "margin_bottom_in", "margin_outer_in", "margin_inner_in"].forEach((k) => {
+      if (!(s[k] >= 0.25)) problems.push("All margins must be at least 0.25\" for KDP.");
+    });
+    if (pages) {
+      const req = requiredGutter(pages);
+      if (s.margin_inner_in < req) problems.push(`KDP requires an inside margin of at least ${req}" for ~${pages} pages.`);
+      else hint.textContent = `Inside margin OK — KDP minimum for ~${pages} pages is ${req}".`;
+    } else {
+      hint.textContent = "KDP minimum gutter grows with page count (0.375\" up to 0.875\").";
+    }
+    if (problems.length) { hint.textContent = [...new Set(problems)].join(" "); hint.classList.add("warn"); }
+    else hint.classList.remove("warn");
+  }
+
+  els.form.addEventListener("input", () => { updatePreview(); saveSettings(); hideResult(); });
+  els.form.addEventListener("change", () => { updatePreview(); saveSettings(); });
+
+  /* ------------------------------ generate ------------------------------ */
+  function setBusy(state) {
+    busy = state;
+    els.gen.classList.toggle("busy", state);
+    els.genLabel.textContent = state ? "Formatting & merging…" : "Generate KDP-Ready PDF";
+    els.gen.disabled = state || !files.length;
+    els.clear.disabled = state || !files.length;
+    els.dz.style.pointerEvents = state ? "none" : "";
+    els.dz.style.opacity = state ? ".55" : "";
+  }
+  function hideResult() { els.result.classList.remove("show"); }
+
+  function triggerDownload(url, filename) {
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.style.display = "none";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function showResult(data) {
+    const r = data.report;
+    $("#statPages").textContent = r.page_count;
+    $("#statTrim").textContent = r.trim_size.replace(/"/g, "″");
+    $("#statSize").textContent = fmtBytes(r.file_size_bytes);
+    const verdict = $("#verdict");
+    verdict.className = `verdict ${r.kdp_ready ? "good" : "bad"}`;
+    verdict.innerHTML = r.kdp_ready
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg> Passed KDP preflight checks${r.warnings.length ? " (see notes)" : ""}`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg> Needs attention before uploading to KDP`;
+    const link = $("#downloadLink");
+    link.href = data.download_url; link.setAttribute("download", data.filename);
+    $("#downloadName").textContent = data.filename;
+    $("#issues").innerHTML =
+      r.errors.map((m) => `<div class="alert err"><span>${escapeHtml(m)}</span></div>`).join("") +
+      r.warnings.map((m) => `<div class="alert warn"><span>${escapeHtml(m)}</span></div>`).join("");
+    $("#tocTable tbody").innerHTML = r.chapters.map((c) => `
+      <tr><td class="name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</td>
+      <td class="n">${c.start_page || "–"}</td><td class="n">${c.output_pages}</td><td class="n">${c.scale_percent}%</td></tr>`).join("");
+    els.result.classList.add("show");
+  }
+
+  els.gen.addEventListener("click", async () => {
+    if (busy || !files.length) return;
+    const settings = readSettings();
+    if (!settings.title) {
+      toast("Tip: add a book title so it is embedded in the PDF metadata.", "info", 4000);
+    }
+    setBusy(true);
+    hideResult();
+    setStatus(`Processing ${files.length} chapter${files.length > 1 ? "s" : ""} locally… large books can take a minute.`, "info");
+    try {
+      const data = await api("/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings),
+      });
+      setStatus(`Done in ${data.elapsed_seconds}s — your download should start automatically.`, "ok");
+      showResult(data);
+      triggerDownload(data.download_url, data.filename);
+    } catch (err) {
+      setStatus(err.message, "err");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  /* ------------------------------ init ------------------------------ */
+  loadSettings();
+  updatePreview();
+  api("/files").then((d) => { files = d.files; render(); }).catch((err) => { render(); setStatus(err.message, "err"); });
+})();
+</script>
+</body>
+</html>
